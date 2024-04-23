@@ -1,0 +1,78 @@
+// Run like this:  simple_client address port
+// Results in argv ["./simple_client", "address", "port"]
+
+#include<sys/socket.h>
+#include<sys/types.h>
+#include<netinet/ip.h>
+#include<netdb.h>
+#include<arpa/inet.h>
+#include<stdio.h>
+#include<unistd.h>
+#include<stdlib.h>
+
+int main(int argc, char ** argv){
+        if(argc < 4){
+                printf("Usage:  %s hostname port\n", argv[0]);
+                return 1;
+        }
+        struct sockaddr_in sad;
+        sad.sin_port = htons(atoi(argv[2]));
+        sad.sin_family = AF_INET;
+        printf("port:  %d\n", sad.sin_port);
+
+        int skt = socket(AF_INET, SOCK_STREAM, 0);
+
+        // do a dns lookup
+        struct hostent* entry = gethostbyname(argv[1]);
+        if(!entry){
+                if(h_errno == HOST_NOT_FOUND){
+                        printf("This is our own message that says the host wasn't found\n");
+                }
+                herror("gethostbyname");
+                return 1;
+        }
+        struct in_addr **addr_list = (struct in_addr**)entry->h_addr_list;  // -> is like (*entry).h_addr_list
+        struct in_addr* c_addr = addr_list[0];
+        char* ip_string = inet_ntoa(*c_addr);
+        sad.sin_addr = *c_addr; // copy the address we found into sad
+        // Finally done with DNS!
+        printf("Connecting to:  %s\n", ip_string);
+        uint32_t address = sad.sin_addr.s_addr;
+        printf("Address was:  %u\n", address);
+        printf("Address printed in hex:  %x\n", address);
+        uint8_t *bytes = &address;
+        printf("Address in the normal way:  %u.%u.%u.%u\n", bytes[0], bytes[1], bytes[2], bytes[3]);
+
+        if( connect(skt, (struct sockaddr*)&sad, sizeof(struct sockaddr_in)) ){
+                perror("connect");
+                return 1;
+        }
+
+        char msg_type=atoi(argv[3]);
+        double value = atof(argv[4]);
+        write(skt, &msg_type, sizeof(char));
+        write(skt, &value, sizeof(double));
+
+        char response;
+        double result;
+        if(read(skt,&response,sizeof(char))==-1){
+                perror("Error receiving response");
+                return 1;
+        }
+        if(response !=4 && response !=5){
+                fprintf(stderr, "Invalid reponse from server\n");
+                return 1;
+        }
+        if(read(skt,&result,sizeof(double))==-1){
+                perror("Error receiving conversion result");
+                return 1;
+        }
+        if(response ==4){
+                printf("Set was received from server\n");
+        }else if(response==5){
+                printf("Conversion result: %.2f\n",result);
+        }
+
+        close(skt);
+        return 0;
+}
